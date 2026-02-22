@@ -7,11 +7,9 @@ import {
   useNodesState,
   useEdgesState,
   addEdge,
-  Connection,
-  Edge,
-  Node,
   BackgroundVariant
 } from '@xyflow/react';
+import type { Connection, Edge, Node } from '@xyflow/react';
 
 import '@xyflow/react/dist/style.css';
 
@@ -34,13 +32,20 @@ const FlowDashboard = () => {
     const fetchData = async () => {
       try {
         setLoading(true);
+        console.log('🔄 Fetching from:', API_URL);
         const res = await fetch(API_URL, {
           headers: {
             'Authorization': `Bearer ${apiKey}`
           }
         });
-        if (!res.ok) throw new Error('Failed to fetch routing data');
+        console.log('📡 Response status:', res.status);
+        if (!res.ok) {
+          const text = await res.text();
+          console.error('❌ Response body:', text);
+          throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+        }
         const data = await res.json();
+        console.log('✅ Data loaded:', data.topics ? Object.keys(data.topics).length + ' topics' : 'error');
         
         const newNodes: Node[] = [];
         const newEdges: Edge[] = [];
@@ -88,6 +93,7 @@ const FlowDashboard = () => {
         setNodes(newNodes);
         setEdges(newEdges);
       } catch (err: any) {
+        console.error('🚨 Fetch error:', err);
         setError(err.message);
       } finally {
         setLoading(false);
@@ -104,8 +110,11 @@ const FlowDashboard = () => {
 
   if (!apiKey) {
     return (
-      <div className="flex items-center justify-center h-full w-full bg-slate-900 flex-col gap-4">
-        <h1 className="text-3xl text-white font-bold mb-4">Flow Suite Login</h1>
+      <div className="flex items-center justify-center h-full w-full bg-slate-900 flex-col gap-4 p-6">
+        <h1 className="text-3xl text-white font-bold mb-4">🔗 Flow Suite</h1>
+        <p className="text-slate-300 text-center max-w-sm mb-4">
+          Voer je MC API key in om je workflow te visualiseren en te beheren.
+        </p>
         <input 
           type="password" 
           placeholder="Enter API Key..."
@@ -121,13 +130,20 @@ const FlowDashboard = () => {
         />
         <button 
           onClick={() => {
+            if (apiKey.length < 20) {
+              alert('API Key is te kort. Check je .api-key bestand.');
+              return;
+            }
             localStorage.setItem('mc_api_key', apiKey);
             window.location.reload();
           }}
-          className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-white font-semibold w-80"
+          className="bg-blue-600 hover:bg-blue-500 px-8 py-2 rounded text-white font-semibold w-80 transition"
         >
           Login
         </button>
+        <p className="text-slate-500 text-xs mt-4">
+          Je key wordt lokaal opgeslagen in localStorage (niet gedeeld).
+        </p>
       </div>
     );
   }
