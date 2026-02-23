@@ -1,235 +1,88 @@
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ReactFlow,
-  MiniMap,
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
-  addEdge,
-  BackgroundVariant
-} from '@xyflow/react';
-import type { Connection, Edge, Node } from '@xyflow/react';
+import { useCallback, useRef, useState } from 'react';
+import type { Node } from '@xyflow/react';
 
-import '@xyflow/react/dist/style.css';
+import LoginScreen from './components/LoginScreen';
+import FlowHeader from './components/FlowHeader';
+import FlowCanvas from './components/FlowCanvas';
+import { useFlowData } from './hooks/useFlowData';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://api.chefgroep.nl/api/routing';
-
-const FlowDashboard = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const [apiKey, setApiKey] = useState(localStorage.getItem('mc_api_key') || '');
-
-  useEffect(() => {
-    if (!apiKey) {
-      setLoading(false);
-      return;
-    }
-
-    // Setup SSE listener for backend routing updates
-    const eventSource = new EventSource(
-      `https://api.chefgroep.nl/api/routing/subscribe?token=${encodeURIComponent(apiKey)}`
-    );
-
-    eventSource.addEventListener('routing_updated', () => {
-      console.log('🔄 Backend routing updated, refreshing...');
-      // Trigger data refresh
-      fetchData();
-    });
-
-    eventSource.onerror = () => {
-      console.warn('⚠️ SSE connection lost');
-      eventSource.close();
-    };
-
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        console.log('🔄 Fetching from:', API_URL);
-        
-        // Retry logic for mobile
-        let res;
-        let lastError;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          try {
-            res = await fetch(API_URL, {
-              headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json',
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache'
-              },
-              credentials: 'include',
-              mode: 'cors'
-            });
-            console.log(`📡 Response status (attempt ${attempt}):`, res.status);
-            break;
-          } catch (err) {
-            lastError = err;
-            console.warn(`⚠️ Attempt ${attempt} failed:`, err);
-            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
-          }
-        }
-        
-        if (!res) {
-          throw lastError || new Error('All retry attempts failed');
-        }
-        
-        console.log('📡 Response headers:', {
-          'Access-Control-Allow-Origin': res.headers.get('Access-Control-Allow-Origin'),
-          'Content-Type': res.headers.get('Content-Type'),
-          'Cache-Control': res.headers.get('Cache-Control')
-        });
-        
-        if (!res.ok) {
-          const text = await res.text();
-          console.error('❌ Response body:', text);
-          throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`);
-        }
-        
-        const data = await res.json();
-        console.log('✅ Data loaded:', data.topics ? Object.keys(data.topics).length + ' topics' : 'no topics key');
-        
-        const newNodes: Node[] = [];
-        const newEdges: Edge[] = [];
-        
-        const keys = Object.keys(data.topics || {});
-        keys.forEach((key, index) => {
-          const topic = data.topics[key];
-          newNodes.push({
-            id: key,
-            position: { x: (index % 4) * 350, y: Math.floor(index / 4) * 250 },
-            data: { label: topic.name || key },
-            style: { 
-              background: '#1e293b', 
-              color: '#fff', 
-              border: '1px solid #3b82f6',
-              borderRadius: '8px',
-              padding: '12px',
-              fontWeight: 'bold',
-              minWidth: '150px',
-              textAlign: 'center'
-            }
-          });
-
-          if (topic.flows) {
-            Object.entries(topic.flows).forEach(([flowKey, flowInfo]: any) => {
-               const targets = Array.isArray(flowInfo.to) ? flowInfo.to : [flowInfo.to];
-               targets.forEach((target: string) => {
-                 newEdges.push({
-                   id: `e-${key}-${target}-${flowKey}`,
-                   source: key,
-                   target: target,
-                   label: flowInfo.action || flowKey,
-                   animated: true,
-                   style: { stroke: '#94a3b8', strokeWidth: 2 },
-                   labelStyle: { fill: '#cbd5e1', fontWeight: 500, fontSize: 12 },
-                   labelBgStyle: { fill: '#1e293b' },
-                   labelBgPadding: [4, 4],
-                   labelBgBorderRadius: 4,
-                 });
-               });
-            });
-          }
-        });
-
-        setNodes(newNodes);
-        setEdges(newEdges);
-      } catch (err: any) {
-        console.error('🚨 Fetch error:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchData();
-
-    // Cleanup SSE on unmount
-    return () => eventSource.close();
-  }, [apiKey]);
-
-  const onConnect = useCallback(
-    (params: Connection | Edge) => setEdges((eds) => addEdge(params, eds)),
-    [setEdges],
+export default function App() {
+  const [apiKey, setApiKey] = useState<string>(
+    () => localStorage.getItem('mc_api_key') ?? ''
   );
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const fitViewRef = useRef<(() => void) | null>(null);
+
+  const {
+    nodes,
+    edges,
+    onNodesChange,
+    onEdgesChange,
+    onConnect,
+    loading,
+    error,
+    nodeCount,
+    edgeCount,
+    refresh,
+  } = useFlowData(apiKey);
+
+  const handleLogin = useCallback((key: string) => {
+    setApiKey(key);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('mc_api_key');
+    setApiKey('');
+    setSelectedNode(null);
+  }, []);
+
+  const handleNodeClick = useCallback((node: Node) => {
+    setSelectedNode((prev) => (prev?.id === node.id ? null : node));
+  }, []);
+
+  const handlePaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
+  const handleFitViewReady = useCallback((fn: () => void) => {
+    fitViewRef.current = fn;
+  }, []);
+
+  const handleFitView = useCallback(() => {
+    fitViewRef.current?.();
+  }, []);
 
   if (!apiKey) {
-    return (
-      <div className="flex items-center justify-center h-full w-full bg-slate-900 flex-col gap-4 p-6">
-        <h1 className="text-3xl text-white font-bold mb-4">🔗 Flow Suite</h1>
-        <p className="text-slate-300 text-center max-w-sm mb-4">
-          Voer je MC API key in om je workflow te visualiseren en te beheren.
-        </p>
-        <input 
-          type="password" 
-          placeholder="Enter API Key..."
-          className="px-4 py-2 rounded bg-slate-800 text-white border border-slate-700 w-80"
-          value={apiKey}
-          onChange={(e) => setApiKey(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              localStorage.setItem('mc_api_key', apiKey);
-              window.location.reload();
-            }
-          }}
-        />
-        <button 
-          onClick={() => {
-            if (apiKey.length < 20) {
-              alert('API Key is te kort. Check je .api-key bestand.');
-              return;
-            }
-            localStorage.setItem('mc_api_key', apiKey);
-            window.location.reload();
-          }}
-          className="bg-blue-600 hover:bg-blue-500 px-8 py-2 rounded text-white font-semibold w-80 transition"
-        >
-          Login
-        </button>
-        <p className="text-slate-500 text-xs mt-4">
-          Je key wordt lokaal opgeslagen in localStorage (niet gedeeld).
-        </p>
-      </div>
-    );
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   return (
-    <div style={{ width: '100vw', height: '100vh', background: '#0f172a' }}>
-      {loading && <div className="absolute top-4 left-4 z-10 bg-blue-600 px-3 py-1 rounded text-white">Loading...</div>}
-      {error && <div className="absolute top-4 left-4 z-10 bg-red-600 px-3 py-1 rounded text-white">Error: {error}</div>}
-      
-      <div className="absolute top-4 right-4 z-10">
-        <button 
-          onClick={() => {
-            localStorage.removeItem('mc_api_key');
-            window.location.reload();
-          }}
-          className="bg-slate-700 hover:bg-slate-600 px-3 py-1 rounded text-white text-sm"
-        >
-          Logout
-        </button>
-      </div>
+    <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+      <FlowHeader
+        loading={loading}
+        error={error}
+        nodeCount={nodeCount}
+        edgeCount={edgeCount}
+        onRefresh={refresh}
+        onLogout={handleLogout}
+        onFitView={handleFitView}
+      />
 
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        colorMode="dark"
-        fitView
-      >
-        <Controls />
-        <MiniMap zoomable pannable nodeColor="#334155" maskColor="#0f172a88" />
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="#334155" />
-      </ReactFlow>
+      {/* Canvas begint onder de header */}
+      <div style={{ position: 'absolute', top: 44, left: 0, right: 0, bottom: 0 }}>
+        <FlowCanvas
+          nodes={nodes}
+          edges={edges}
+          selectedNode={selectedNode}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeClick={handleNodeClick}
+          onPaneClick={handlePaneClick}
+          onClosePanel={() => setSelectedNode(null)}
+          onFitViewReady={handleFitViewReady}
+        />
+      </div>
     </div>
   );
-};
-
-export default FlowDashboard;
+}

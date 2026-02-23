@@ -1,73 +1,115 @@
-# React + TypeScript + Vite
+# Flow Suite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+**Flow Suite** is een React 19 + TypeScript webapplicatie die de workflow- en routingconfiguratie van de [OpenClaw MC API](https://api.chefgroep.nl) visualiseert als een interactief node/edge diagram.
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Wat doet het?
 
-## React Compiler
+- Haalt routing data op via de MC API (`/api/routing`)
+- Toont topics als nodes en flows als gerichte edges in een interactief canvas
+- Luistert via **Server-Sent Events** (SSE) naar live routing-updates
+- Klikken op een node opent een detailpanel met flow-informatie
+- Toolbar met statistieken, refresh en zoom-fit
+- Authenticatie via API key (opgeslagen in `localStorage`)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+---
 
-## Expanding the ESLint configuration
+## Vereisten
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Node.js >= 18
+- npm >= 9
+- Toegang tot de OpenClaw MC API
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+---
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Installatie
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+git clone git@github.com:WantedChef/flow-suite.git
+cd flow-suite
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### Environment variabelen
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Maak een `.env.local` aan in de root:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_API_URL=https://api.chefgroep.nl/api/routing
+VITE_SSE_URL=https://api.chefgroep.nl/api/routing/subscribe
 ```
+
+---
+
+## Ontwikkeling
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:5173](http://localhost:5173) in je browser.
+
+---
+
+## Productie build
+
+```bash
+npm run build
+```
+
+De output staat in de `dist/` map. Deze kan worden geserveerd door elke statische webserver (nginx, Caddy, etc.).
+
+### Voorbeeld nginx configuratie
+
+```nginx
+server {
+    listen 80;
+    server_name flow.chefgroep.nl;
+    root /var/www/flow-suite/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+---
+
+## Projectstructuur
+
+```
+src/
+├── components/
+│   ├── FlowCanvas.tsx      # ReactFlow canvas wrapper
+│   ├── FlowHeader.tsx      # Header met acties en statistieken
+│   ├── LoginScreen.tsx     # Login scherm met API key invoer
+│   ├── NodeDetailPanel.tsx # Zijpaneel met topic/flow details
+│   └── TopicNode.tsx       # Custom node component
+├── hooks/
+│   └── useFlowData.ts      # Data fetching + SSE logica
+├── types/
+│   └── api.ts              # TypeScript types voor MC API responses
+├── App.tsx                 # Hoofd orchestratie component
+├── main.tsx                # React entry point
+└── index.css               # Tailwind CSS import
+```
+
+---
+
+## Tech stack
+
+| Package | Versie | Doel |
+|---|---|---|
+| React | 19 | UI framework |
+| TypeScript | 5 | Type safety |
+| Vite | 7 | Build tool |
+| @xyflow/react | 12 | Flow/node diagram engine |
+| Tailwind CSS | 4 | Utility-first styling |
+
+---
+
+## Licentie
+
+Intern project — WantedChef / OpenClaw. Niet publiek beschikbaar.
