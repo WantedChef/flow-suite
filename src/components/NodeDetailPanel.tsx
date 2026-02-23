@@ -1,5 +1,17 @@
 import type { Node } from '@xyflow/react';
-import type { Topic } from '../types/api';
+import type { Topic, FlowDefinition } from '../types/api';
+
+interface TopicNodeData {
+  label: string;
+  topic: Topic;
+  topicKey: string;
+}
+
+function isTopicNodeData(data: unknown): data is TopicNodeData {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.topicKey === 'string';
+}
 
 interface NodeDetailPanelProps {
   node: Node | null;
@@ -9,9 +21,17 @@ interface NodeDetailPanelProps {
 export default function NodeDetailPanel({ node, onClose }: NodeDetailPanelProps) {
   if (!node) return null;
 
-  const topic = node.data.topic as Topic | undefined;
-  const topicKey = node.data.topicKey as string;
-  const flowEntries = Object.entries(topic?.flows ?? {});
+  if (!isTopicNodeData(node.data)) {
+    return (
+      <div className="absolute right-4 top-14 bottom-4 w-72 z-20 bg-slate-800 border border-slate-700 rounded-lg shadow-xl flex flex-col overflow-hidden">
+        <div className="p-4 text-red-400 text-sm">Ongeldige node data</div>
+      </div>
+    );
+  }
+
+  const topic = node.data.topic;
+  const topicKey = node.data.topicKey;
+  const flowEntries = Object.entries(topic?.flows ?? {}) as [string, FlowDefinition][];
 
   return (
     <div className="absolute right-4 top-14 bottom-4 w-72 z-20 bg-slate-800 border border-slate-700 rounded-lg shadow-xl flex flex-col overflow-hidden">

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNodesState, useEdgesState, addEdge } from '@xyflow/react';
 import type { Connection, Edge, Node } from '@xyflow/react';
 import type { RoutingData, Topic } from '../types/api';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://api.chefgroep.nl/api/routing';
 const SSE_URL = import.meta.env.VITE_SSE_URL || 'https://api.chefgroep.nl/api/routing/subscribe';
+const SSE_RECONNECT_DELAY = 5000;
+const SSE_MAX_RECONNECTS = 5;
 
 function buildNodesAndEdges(data: RoutingData): { nodes: Node[]; edges: Edge[] } {
   const newNodes: Node[] = [];
@@ -107,21 +109,24 @@ export function useFlowData(apiKey: string) {
       setNodeCount(n.length);
       setEdgeCount(e.length);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? err.message : 'Onbekende fout bij ophalen data';
       setError(msg);
     } finally {
       setLoading(false);
     }
   }, [apiKey, setNodes, setEdges]);
 
-  useEffect(() => {
-    if (!apiKey) return;
+  const reconnectAttemptsRef = useRef(0);
+  const sseRef = useRef<EventSource | null>(null);
 
-    refresh();
+  const connectSSE = useCallback(() => {
+    if (!apiKey || sseRef.current) return;
 
     const eventSource = new EventSource(
       `${SSE_URL}?token=${encodeURIComponent(apiKey)}`
     );
+
+    sseRef.current = eventSource;
 
     eventSource.addEventListener('routing_updated', () => {
       console.log('SSE: routing_updated ontvangen, data vernieuwen...');
@@ -131,10 +136,40 @@ export function useFlowData(apiKey: string) {
     eventSource.onerror = () => {
       console.warn('SSE verbinding verbroken');
       eventSource.close();
-    };
+      sseRef.current = null;
 
-    return () => eventSource.close();
+      if (reconnectAttemptsRef.current < SSE_MAX_RECONNECTS) {
+        reconnectAttemptsRef.current++;
+        console.log(`SSE: reconnect poging ${reconnectAttemptsRef.current}/${SSE_MAX_RECONNECTS}...`);
+        setTimeout(() => {
+          if (apiKey) connectSSE();
+        }, SSE_RECONNECT_DELAY);
+      } else {
+        console.warn('SSE: max reconnect pogingen bereikt');
+      }
+    };
   }, [apiKey, refresh]);
+
+  useEffect(() => {
+    if (!apiKey) {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+      return;
+    }
+
+    reconnectAttemptsRef.current = 0;
+    refresh();
+    connectSSE();
+
+    return () => {
+      if (sseRef.current) {
+        sseRef.current.close();
+        sseRef.current = null;
+      }
+    };
+  }, [apiKey, refresh, connectSSE]);
 
   const onConnect = useCallback(
     (params: Connection | Edge) => setEdges((eds) => addEdge(params, eds)),

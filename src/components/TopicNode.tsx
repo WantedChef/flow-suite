@@ -9,6 +9,12 @@ export interface TopicNodeData {
   topicKey: string;
 }
 
+function isTopicNodeData(data: unknown): data is TopicNodeData {
+  if (typeof data !== 'object' || data === null) return false;
+  const d = data as Record<string, unknown>;
+  return typeof d.label === 'string' && typeof d.topicKey === 'string';
+}
+
 const TYPE_COLORS: Record<string, string> = {
   input: '#2563eb',
   output: '#16a34a',
@@ -22,9 +28,11 @@ function getTypeColor(type?: string): string {
 }
 
 function TopicNode({ data, selected }: NodeProps) {
-  // NodeProps.data is Record<string,unknown>; we casten via unknown
-  const nodeData = data as unknown as TopicNodeData;
-  const color = getTypeColor(nodeData.topic?.type);
+  if (!isTopicNodeData(data)) {
+    return <div style={{ color: 'red', padding: 8 }}>Ongeldige node</div>;
+  }
+  
+  const color = getTypeColor(data.topic?.type);
 
   return (
     <div
@@ -42,7 +50,7 @@ function TopicNode({ data, selected }: NodeProps) {
     >
       <Handle type="target" position={Position.Top} style={{ background: '#94a3b8' }} />
 
-      {nodeData.topic?.type && (
+      {data.topic?.type && (
         <span
           style={{
             background: color,
@@ -57,17 +65,17 @@ function TopicNode({ data, selected }: NodeProps) {
             marginBottom: 4,
           }}
         >
-          {nodeData.topic.type}
+          {data.topic.type}
         </span>
       )}
 
       <div style={{ color: '#f1f5f9', fontWeight: 700, fontSize: 13 }}>
-        {nodeData.label}
+        {data.label}
       </div>
 
-      {nodeData.topic?.description && (
+      {data.topic?.description && (
         <div style={{ color: '#94a3b8', fontSize: 10, marginTop: 4, maxWidth: 160 }}>
-          {nodeData.topic.description}
+          {data.topic.description}
         </div>
       )}
 
