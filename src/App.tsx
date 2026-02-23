@@ -29,23 +29,70 @@ const FlowDashboard = () => {
       return;
     }
 
+    // Setup SSE listener for backend routing updates
+    const eventSource = new EventSource(
+      `https://api.chefgroep.nl/api/routing/subscribe?token=${encodeURIComponent(apiKey)}`
+    );
+
+    eventSource.addEventListener('routing_updated', () => {
+      console.log('🔄 Backend routing updated, refreshing...');
+      // Trigger data refresh
+      fetchData();
+    });
+
+    eventSource.onerror = () => {
+      console.warn('⚠️ SSE connection lost');
+      eventSource.close();
+    };
+
     const fetchData = async () => {
       try {
         setLoading(true);
+        setError(null);
         console.log('🔄 Fetching from:', API_URL);
-        const res = await fetch(API_URL, {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`
+        
+        // Retry logic for mobile
+        let res;
+        let lastError;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            res = await fetch(API_URL, {
+              headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+              },
+              credentials: 'include',
+              mode: 'cors'
+            });
+            console.log(`📡 Response status (attempt ${attempt}):`, res.status);
+            break;
+          } catch (err) {
+            lastError = err;
+            console.warn(`⚠️ Attempt ${attempt} failed:`, err);
+            if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
           }
+        }
+        
+        if (!res) {
+          throw lastError || new Error('All retry attempts failed');
+        }
+        
+        console.log('📡 Response headers:', {
+          'Access-Control-Allow-Origin': res.headers.get('Access-Control-Allow-Origin'),
+          'Content-Type': res.headers.get('Content-Type'),
+          'Cache-Control': res.headers.get('Cache-Control')
         });
-        console.log('📡 Response status:', res.status);
+        
         if (!res.ok) {
           const text = await res.text();
           console.error('❌ Response body:', text);
-          throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+          throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`);
         }
+        
         const data = await res.json();
-        console.log('✅ Data loaded:', data.topics ? Object.keys(data.topics).length + ' topics' : 'error');
+        console.log('✅ Data loaded:', data.topics ? Object.keys(data.topics).length + ' topics' : 'no topics key');
         
         const newNodes: Node[] = [];
         const newEdges: Edge[] = [];
@@ -101,6 +148,9 @@ const FlowDashboard = () => {
     };
 
     fetchData();
+
+    // Cleanup SSE on unmount
+    return () => eventSource.close();
   }, [apiKey]);
 
   const onConnect = useCallback(
